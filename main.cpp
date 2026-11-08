@@ -5,15 +5,12 @@
 #include <iostream>
 #include <limits>
 #include <queue>
+#include <random>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-struct Edge {
-    int destination;
-    double weight;
-};
+#include "olsr.h"
 
 struct Link {
     int origin;
@@ -21,18 +18,52 @@ struct Link {
     double weight;
 };
 
-struct PathResult {
-    std::vector<int> vertices;
-    double totalWeight;
-    bool endpointsExist;
-};
-
 struct Point {
     double x;
     double y;
 };
 
-using Graph = std::unordered_map<int, std::vector<Edge>>;
+bool generateRandomGraph(int nodeCount, const std::string& filename) {
+    if (nodeCount < 1) {
+        std::cerr << "Erro: o numero de nos deve ser maior que zero.\n";
+        return false;
+    }
+
+    std::ofstream output(filename);
+    if (!output) {
+        std::cerr << "Erro: nao foi possivel criar o arquivo \"" << filename << "\".\n";
+        return false;
+    }
+
+    std::random_device randomDevice;
+    std::mt19937 generator(randomDevice());
+    std::bernoulli_distribution addExtraEdge(0.3);
+
+    if (nodeCount == 1) {
+        output << "1 1 1\n";
+    } else {
+        std::vector<int> parent(nodeCount + 1, 0);
+        for (int node = 2; node <= nodeCount; ++node) {
+            std::uniform_int_distribution<int> chooseParent(1, node - 1);
+            parent[node] = chooseParent(generator);
+            output << node << ' ' << parent[node] << " 1\n";
+        }
+
+        for (int origin = 1; origin <= nodeCount; ++origin) {
+            for (int destination = origin + 1; destination <= nodeCount; ++destination) {
+                if (parent[destination] != origin && addExtraEdge(generator)) {
+                    output << origin << ' ' << destination << " 1\n";
+                }
+            }
+        }
+    }
+
+    if (!output) {
+        std::cerr << "Erro: falha ao gravar o arquivo \"" << filename << "\".\n";
+        return false;
+    }
+    return true;
+}
 
 bool loadGraph(const std::string& filename, Graph& graph, std::vector<Link>& links) {
     std::ifstream input(filename);
@@ -245,13 +276,51 @@ void printShortestPath(const PathResult& result, int origin, int destination) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc > 2) {
-        std::cerr << "Uso: " << argv[0] << " [arquivo.txt]\n";
-        return 1;
+    if (argc >= 2 && std::string(argv[1]) == "--gerar") {
+        if (argc < 3 || argc > 4) {
+            std::cerr << "Uso: " << argv[0] << " --gerar NUM_NOS [arquivo.txt]\n";
+            return 1;
+        }
+
+        std::istringstream nodeCountInput(argv[2]);
+        int nodeCount;
+        std::string extra;
+        if (!(nodeCountInput >> nodeCount) || (nodeCountInput >> extra) || nodeCount < 1) {
+            std::cerr << "Erro: informe um numero de nos inteiro maior que zero.\n";
+            return 1;
+        }
+
+        const std::string filename = argc == 4 ? argv[3] : "grafo_aleatorio.txt";
+        if (!generateRandomGraph(nodeCount, filename)) {
+            return 1;
+        }
+        std::cout << "Grafo aleatorio com " << nodeCount << " nos salvo em \""
+                  << filename << "\".\n";
+        return 0;
     }
 
+    bool runOlsr = false;
+    int olsrSource = 0;
     std::string filename;
-    if (argc == 2) {
+    if (argc >= 2 && std::string(argv[1]) == "--olsr") {
+        if (argc < 3 || argc > 4) {
+            std::cerr << "Uso: " << argv[0] << " --olsr NO_ORIGEM [arquivo.txt]\n";
+            return 1;
+        }
+        std::istringstream sourceInput(argv[2]);
+        std::string extra;
+        if (!(sourceInput >> olsrSource) || (sourceInput >> extra)) {
+            std::cerr << "Erro: informe um identificador inteiro para o no origem.\n";
+            return 1;
+        }
+        runOlsr = true;
+        filename = argc == 4 ? argv[3] : "grafo_aleatorio.txt";
+    } else if (argc > 2) {
+        std::cerr << "Uso: " << argv[0] << " [arquivo.txt] ou " << argv[0]
+                  << " --gerar NUM_NOS [arquivo.txt] ou " << argv[0]
+                  << " --olsr NO_ORIGEM [arquivo.txt]\n";
+        return 1;
+    } else if (argc == 2) {
         filename = argv[1];
     } else {
         std::cout << "Arquivo com os enlaces: ";
@@ -271,6 +340,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::cout << "Representacao SVG criada em \"grafo.svg\".\n\n";
+
+    if (runOlsr &&
+        !runOlsrSimulation(graph, olsrSource, findShortestPath)) {
+        return 1;
+    }
+    if (runOlsr) {
+        return 0;
+    }
 
     while (true) {
         std::string input;

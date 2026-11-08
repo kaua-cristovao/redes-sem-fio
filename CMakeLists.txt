@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10.0)
 project(redes-sem-fio VERSION 0.1.0 LANGUAGES C CXX)
 
-add_executable(redes-sem-fio main.cpp)
+add_executable(redes-sem-fio main.cpp olsr.cpp)
 
 set_target_properties(redes-sem-fio PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}"
